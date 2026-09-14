@@ -25,7 +25,7 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-This installs the `visualize` command. SMPL-H mesh needs the official `model.npz` (`--smplh-model` or `HUMANPLUS_SMPLH_MODEL`). Without it the viewer falls back to the SMPL-24 skeleton.
+SMPL-H mesh needs the official `model.npz` (`--smplh-model` or `HUMANPLUS_SMPLH_MODEL`). Without it the viewer falls back to the SMPL-24 skeleton.
 
 ## Getting Started
 
@@ -75,15 +75,19 @@ Done. Use these arrays in your own scripts or pass the session to the viewer.
 
 ### Visualize
 
+From the toolkit directory:
+
 ```bash
-visualize --session-dir /path/to/session
+python -m visualize --session-dir /path/to/session
 ```
 
 Optional: also write a `.rrd` recording (replay later with `rerun vis.rrd`):
 
 ```bash
-visualize --session-dir /path/to/session --output-rrd vis.rrd
+python -m visualize --session-dir /path/to/session --output-rrd vis.rrd
 ```
+
+After `pip install -e .`, the same command is available as `visualize`.
 
 ![Rerun visualization](./assets/rerun.png)
 

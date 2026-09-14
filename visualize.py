@@ -2,8 +2,28 @@
 
 from __future__ import annotations
 
-import argparse
+import sys
 from pathlib import Path
+
+if __name__ == "__main__" and __package__ in (None, ""):
+    import runpy
+    import types
+
+    _root = Path(__file__).resolve().parent
+    _pkg_name = "humanplus_viewer"
+    _parent = str(_root.parent)
+    if _parent not in sys.path:
+        sys.path.insert(0, _parent)
+    if _pkg_name not in sys.modules:
+        _pkg = types.ModuleType(_pkg_name)
+        _pkg.__path__ = [str(_root)]
+        _pkg.__file__ = str(_root / "__init__.py")
+        _pkg.__package__ = _pkg_name
+        sys.modules[_pkg_name] = _pkg
+    runpy.run_module(f"{_pkg_name}.visualize", run_name="__main__", alter_sys=True)
+    raise SystemExit
+
+import argparse
 from typing import Optional, Tuple
 
 import cv2
