@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "humanplus-viewer"
+version = "0.1.0"
+description = "Rerun viewer and HDF5 loader for HumanPlus-1000"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "HumanPlus" }]
+dependencies = [
+    "numpy>=1.26",
+    "opencv-python-headless>=4.8",
+    "h5py>=3.10",
+    "tqdm>=4.66",
+    "scipy>=1.11",
+    "rerun-sdk==0.29.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/humanplus-ai/humanplus-1000"
+Dataset = "https://huggingface.co/datasets/humanplus-ai/HumanPlus-1000"
+
+[project.scripts]
+humanplus-viewer = "humanplus_viewer.visualize:main"
+
+[tool.setuptools]
+package-dir = { "humanplus_viewer" = "." }
+packages = ["humanplus_viewer"]

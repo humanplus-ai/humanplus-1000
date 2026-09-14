@@ -1,0 +1,13 @@
+name: humanplus
+channels:
+  - defaults
+dependencies:
+  - python=3.11
+  - pip
+  - pip:
+      - numpy>=1.26
+      - h5py>=3.10
+      - opencv-python-headless>=4.8
+      - tqdm>=4.66
+      - scipy>=1.11
+      - rerun-sdk==0.29.0
