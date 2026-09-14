@@ -15,7 +15,7 @@ Tools for **reading** and **visualizing** [HumanPlus-1000](https://huggingface.c
 | `blueprint.py` | Rerun layout (`create_humanplus_blueprint`). |
 | `body_model.py` | Numpy SMPL-H LBS from official `model.npz` (optional mesh). |
 | `examples/example_load_annotation.py` | List HDF5 contents, load a session, print a summary. |
-| `examples/example_visualize_rrd.py` | Log a session to the Rerun viewer or a `.rrd` file. |
+| `examples/example_visualize.py` | Open a session in the Rerun viewer. |
 
 ## Install
 
@@ -23,15 +23,10 @@ Tools for **reading** and **visualizing** [HumanPlus-1000](https://huggingface.c
 conda create -n humanplus python=3.11
 conda activate humanplus
 pip install -r requirements.txt
-```
-
-Optional (so `python -m humanplus_viewer` works from any directory):
-
-```bash
 pip install -e .
 ```
 
-SMPL-H mesh needs the official `model.npz` (`--smplh-model` or `HUMANPLUS_SMPLH_MODEL`). Without it the viewer falls back to the SMPL-24 skeleton.
+This installs the `humanplus-viewer` command. SMPL-H mesh needs the official `model.npz` (`--smplh-model` or `HUMANPLUS_SMPLH_MODEL`). Without it the viewer falls back to the SMPL-24 skeleton.
 
 ## Getting Started
 
@@ -79,23 +74,28 @@ Example output:
 Done. Use these arrays in your own scripts or pass the session to the viewer.
 ```
 
-### Visualize with Rerun
+### Visualize
 
 ```bash
-python examples/example_visualize_rrd.py --data_root /path/to/session --output_rrd vis.rrd
+humanplus-viewer --session-dir /path/to/session
 ```
 
-Or:
+From a source checkout without installing the command:
 
 ```bash
-python -m humanplus_viewer --session-dir /path/to/session --output-rrd vis.rrd
+python examples/example_visualize.py --session-dir /path/to/session
+python -m humanplus_viewer --session-dir /path/to/session
 ```
-
-Then open a saved recording with `rerun vis.rrd`.
 
 ![Rerun visualization](./assets/rerun.png)
 
 The layout shows stereo fisheye, rectified views with hand overlays, depth, a top-down SLAM trajectory, the SMPL-H body in the reconstructed world, and the activity caption.
+
+Optional: also write a **`.rrd`** file (Rerun's on-disk recording, similar to a replay tape). The live window still opens unless you pass `--no-spawn`. Replay later with `rerun vis.rrd`.
+
+```bash
+humanplus-viewer --session-dir /path/to/session --output-rrd vis.rrd
+```
 
 ## Coordinates
 

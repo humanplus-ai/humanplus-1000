@@ -295,6 +295,37 @@ def _log_small_camera_frustum(
     )
 
 
+def _setup_rerun_sinks(
+    app_id: str,
+    spawn: bool,
+    output_rrd: Optional[str | Path],
+) -> Optional[Path]:
+    """Connect Rerun to a live viewer and/or an optional ``.rrd`` file.
+
+    ``.rrd`` is Rerun's on-disk recording. ``rr.save()`` replaces other sinks, so
+    saving while spawning must use ``set_sinks(GrpcSink, FileSink)`` or the
+    viewer stays empty.
+    """
+    rr.init(app_id, spawn=False)
+    out_path: Optional[Path] = None
+    if output_rrd is not None:
+        out_path = Path(output_rrd)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if spawn:
+        rr.spawn()
+        print("[viewer] opened Rerun window")
+    if spawn and out_path is not None:
+        rr.set_sinks(rr.GrpcSink(), rr.FileSink(str(out_path)))
+        print(f"[viewer] also writing recording {out_path}")
+    elif out_path is not None:
+        rr.save(str(out_path))
+        print(f"[viewer] writing {out_path} (no window). Open later with: rerun {out_path}")
+    elif not spawn:
+        raise ValueError("Pass --output-rrd when using --no-spawn, or omit --no-spawn to open the viewer.")
+    return out_path
+
+
 def visualize_release(
     release_dir: str | Path,
     output_rrd: Optional[str | Path] = None,
@@ -327,8 +358,6 @@ def visualize_release(
         load_point_cloud=True,
         point_cloud_max_points=point_cloud_max_points,
     )
-
-    rr.init(app_id, spawn=spawn)
     calib = episode.calib
     print(
         f"[viewer] videos: {episode.video_left_path.name} / "
@@ -394,6 +423,7 @@ def visualize_release(
             "(first_frame)"
         )
 
+    out_path = _setup_rerun_sinks(app_id, spawn=spawn, output_rrd=output_rrd)
     rr.send_blueprint(
         create_humanplus_blueprint(
             fisheye_wh=calib.fisheye_left_size,
@@ -407,12 +437,6 @@ def visualize_release(
             body_repr=body_repr,
         )
     )
-
-    out_path: Optional[Path] = None
-    if output_rrd is not None:
-        out_path = Path(output_rrd)
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        rr.save(str(out_path))
 
     map_l1, map_l2 = make_fisheye_undistort_maps(
         calib.fisheye_left_K,
@@ -638,8 +662,17 @@ def build_argparser() -> argparse.ArgumentParser:
         required=True,
         help="Session folder (annotation.hdf5 + fisheye mp4)",
     )
-    parser.add_argument("--output-rrd", type=str, default=None, help="Optional .rrd output")
-    parser.add_argument("--no-spawn", action="store_true", help="Do not open the Rerun viewer")
+    parser.add_argument(
+        "--output-rrd",
+        type=str,
+        default=None,
+        help="Optional Rerun recording (.rrd) on disk; the live window still opens unless --no-spawn",
+    )
+    parser.add_argument(
+        "--no-spawn",
+        action="store_true",
+        help="Do not open the Rerun window (use with --output-rrd)",
+    )
     parser.add_argument("--max-frames", type=int, default=-1)
     parser.add_argument("--stride", type=int, default=1)
     parser.add_argument("--image-scale", type=float, default=0.5)
