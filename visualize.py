@@ -651,6 +651,7 @@ visualize_session = visualize_release
 def build_argparser() -> argparse.ArgumentParser:
     """CLI for the HumanPlus-1000 viewer."""
     parser = argparse.ArgumentParser(
+        prog="visualize",
         description="Visualize a HumanPlus-1000 session with Rerun.",
     )
     parser.add_argument(

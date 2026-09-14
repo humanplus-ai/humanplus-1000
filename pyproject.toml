@@ -24,7 +24,7 @@ Homepage = "https://github.com/humanplus-ai/humanplus-1000"
 Dataset = "https://huggingface.co/datasets/humanplus-ai/HumanPlus-1000"
 
 [project.scripts]
-humanplus-viewer = "humanplus_viewer.visualize:main"
+visualize = "humanplus_viewer.visualize:main"
 
 [tool.setuptools]
 package-dir = { "humanplus_viewer" = "." }
