@@ -50,6 +50,37 @@ class ReleaseCalibration:
     rectification_source: str = "identity_fallback"
 
 
+@dataclass(frozen=True)
+class AtomicAction:
+    """An action on the released video clock, using [start, end)."""
+
+    label: str
+    start_s: float
+    end_s: float
+    segment_id: str
+
+
+def load_atomic_actions(f: h5py.File) -> Tuple[AtomicAction, ...]:
+    path = "behavior_annotation/atomic_action"
+    if path not in f or not bool(f[path].attrs.get("available", True)):
+        return ()
+    g = f[path]
+    required = ("label", "start_time_s", "end_time_s")
+    if any(key not in g for key in required):
+        raise ValueError(f"{path}: missing label/start_time_s/end_time_s")
+    labels, starts, ends = (g[key][...] for key in required)
+    ids = g["segment_id"][...] if "segment_id" in g else np.arange(1, len(labels) + 1)
+    if any(np.ndim(v) != 1 for v in (labels, starts, ends, ids)) or not (len(labels) == len(starts) == len(ends) == len(ids)):
+        raise ValueError(f"{path}: arrays must be one-dimensional and have equal lengths")
+    actions = []
+    for label, start, end, segment_id in zip(labels, starts, ends, ids):
+        start, end = float(start), float(end)
+        if not np.isfinite([start, end]).all() or end <= start:
+            raise ValueError(f"{path}: invalid time range {start}–{end}")
+        actions.append(AtomicAction(str(_decode(label)), start, end, str(_decode(segment_id))))
+    return tuple(sorted(actions, key=lambda a: (a.start_s, a.end_s)))
+
+
 @dataclass
 class TaskDescription:
     """Behavior caption loaded from HDF5 or a sidecar JSON file."""
@@ -91,6 +122,7 @@ class ReleaseEpisode:
     hand_right_joints_3d: Optional[np.ndarray] = None
     hand_left_wrist_position_camera: Optional[np.ndarray] = None
     hand_right_wrist_position_camera: Optional[np.ndarray] = None
+    slam_camera_frame: str = "rectified_left"
     slam_T_camera: np.ndarray = field(default_factory=lambda: np.zeros(0))
     slam_translation: np.ndarray = field(default_factory=lambda: np.zeros(0))
     slam_quaternion: np.ndarray = field(default_factory=lambda: np.zeros(0))
@@ -103,6 +135,7 @@ class ReleaseEpisode:
     depth_intrinsics: Optional[np.ndarray] = None
     depth_attrs: Dict[str, Any] = field(default_factory=dict)
     task: TaskDescription = field(default_factory=TaskDescription)
+    atomic_actions: Tuple[AtomicAction, ...] = ()
     unavailable_products: Tuple[str, ...] = ()
 
     @property
@@ -592,6 +625,7 @@ def load_release_episode(
             hand_right_wrist_position_camera=_optional_dataset(
                 hand, "right/wrist_position_camera"
             ),
+            slam_camera_frame=str(_decode(slam.attrs.get("camera_frame", "rectified_left"))),
             slam_T_camera=slam_T_camera,
             slam_translation=slam_translation,
             slam_quaternion=np.asarray(slam_quaternion, dtype=np.float32),
@@ -604,6 +638,7 @@ def load_release_episode(
             depth_intrinsics=depth_K,
             depth_attrs=depth_attrs,
             task=task,
+            atomic_actions=load_atomic_actions(f),
             unavailable_products=unavailable,
         )
 
@@ -679,6 +714,5 @@ def build_video_to_depth_index(
 def format_task_markdown(task: TaskDescription) -> str:
     """Markdown for the Behavior Annotation panel."""
     return (
-        "### Behavior Annotation\n\n"
-        f"**Activity Summarization**  \n{task.activity_summarization}\n"
+        f"{task.activity_summarization}\n"
     )

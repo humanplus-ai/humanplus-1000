@@ -31,6 +31,8 @@ import numpy as np
 import rerun as rr
 from tqdm import tqdm
 
+from .projection import BodyProjection
+from .behavior import BehaviorDisplay
 from .blueprint import create_humanplus_blueprint
 from .body_model import SmplhModel, resolve_smplh_model
 from .constants import (
@@ -48,7 +50,6 @@ from .constants import (
     PATH_FISHEYE_LEFT,
     PATH_FISHEYE_RIGHT,
     PATH_RECTIFIED_LEFT,
-    PATH_RECTIFIED_RIGHT,
     PATH_SLAM_TRAJ,
     PATH_TASK,
     PATH_WORLD,
@@ -365,6 +366,8 @@ def visualize_release(
     body_y_offset: float = 0.0,
     ground_mode: str = "first_frame",
     app_id: str = "HumanPlus-1000",
+    projection_repr: str = "skeleton",
+    projection_opacity: float = 0.4,
 ) -> Optional[Path]:
     """Visualize one HumanPlus-1000 session in Rerun.
 
@@ -394,18 +397,21 @@ def visualize_release(
         depth_h = int(episode.depth.shape[-2])
         depth_w = int(episode.depth.shape[-1])
 
+    if projection_repr not in ("skeleton", "mesh", "both"):
+        raise ValueError(f"Unknown projection representation: {projection_repr}")
+    projection = BodyProjection(calib, episode.slam_camera_frame, opacity=projection_opacity)
     smplh_model: Optional[SmplhModel] = None
-    if body_repr in ("mesh", "both"):
-        resolved = resolve_smplh_model(smplh_model_path, smplh_gender)
-        if resolved is None:
-            print(
-                "[viewer] SMPL-H model.npz not found; falling back to skeleton. "
-                "Pass --smplh-model or set HUMANPLUS_SMPLH_MODEL."
-            )
-            body_repr = "skeleton"
-        else:
-            smplh_model = SmplhModel(resolved)
-            print(f"[viewer] SMPL-H mesh: {resolved}")
+    # Load whenever available so the 2D and WORLD representations can be
+    # switched independently in the same recording.
+    resolved = resolve_smplh_model(smplh_model_path, smplh_gender)
+    if resolved is None:
+        print("[viewer] SMPL-H model.npz not found; WORLD and projection use skeleton. "
+              "Pass --smplh-model or set HUMANPLUS_SMPLH_MODEL to enable mesh layers.")
+        body_repr = projection_repr = "skeleton"
+    else:
+        smplh_model = SmplhModel(resolved)
+        print(f"[viewer] SMPL-H mesh: {resolved}")
+    print(f"[viewer] body projection: rectified right | SLAM camera={episode.slam_camera_frame}")
 
     first_frame_mesh_y: Optional[float] = None
     if (
@@ -455,6 +461,7 @@ def visualize_release(
             slam_view_extent=slam_extent,
             show_slam_point_cloud=show_slam_point_cloud,
             body_repr=body_repr,
+            projection_repr=projection_repr,
         )
     )
 
@@ -474,7 +481,7 @@ def visualize_release(
         calib.rectified_size,
         R=calib.R_rect_right,
     )
-    T_rect_left_hamer, T_rect_right_hamer = _hamer_to_rectified_transforms(calib)
+    T_rect_left_hamer, _ = _hamer_to_rectified_transforms(calib)
 
     depth_lookup = build_video_to_depth_index(
         episode.depth_frame_indices, episode.num_video_frames
@@ -483,7 +490,9 @@ def visualize_release(
     depth_max = float(episode.depth_attrs.get("max_depth_m", 8.0))
     depth_vis_max = min(depth_max, 4.0)
 
+    behavior = BehaviorDisplay(episode)
     _log_static(episode, T_mocap_slam)
+    behavior.log_static()
     if smplh_model is not None:
         rr.log(
             PATH_BODY_MESH,
@@ -511,7 +520,9 @@ def visualize_release(
                 continue
 
             rr.set_time("frame", sequence=video_i)
-            rr.set_time("stable_time", duration=float(video_i) / 30.0)
+            seconds = float(behavior.times[video_i])
+            rr.set_time("stable_time", duration=seconds)
+            behavior.advance(seconds)
 
             left_bgr, right_bgr = videos.read_index(video_i)
             rr.log(
@@ -571,15 +582,8 @@ def visualize_release(
                 right_hand_cam,
                 T_view_hamercam=T_rect_left_hamer,
             )
-            rect_r_vis = _overlay_hands_on_rectified(
-                _bgr_to_rgb(rect_r),
-                calib.rectified_K,
-                left_hand_cam,
-                right_hand_cam,
-                T_view_hamercam=T_rect_right_hamer,
-            )
             rr.log(PATH_RECTIFIED_LEFT, rr.Image(_scale_rgb(rect_l_vis, image_scale)))
-            rr.log(PATH_RECTIFIED_RIGHT, rr.Image(_scale_rgb(rect_r_vis, image_scale)))
+            projection_rgb = _scale_rgb(_bgr_to_rgb(rect_r), image_scale)
 
             depth_i = int(depth_lookup[video_i]) if video_i < len(depth_lookup) else -1
             depth_frame = (
@@ -626,6 +630,7 @@ def visualize_release(
                     rr.LineStrips3D(body_lines, colors=[COLOR_BODY], radii=0.01),
                 )
 
+            verts = None
             if smplh_model is not None:
                 verts, normals = smplh_model.forward_at_pelvis(
                     episode.body_smplh_pose[motion_i], body[0]
@@ -636,6 +641,12 @@ def visualize_release(
                         vertex_positions=verts, vertex_normals=normals
                     ),
                 )
+
+            projection.log_frame(
+                projection_rgb, body, T_mocap_cam,
+                vertices_world=verts,
+                faces=smplh_model.faces if smplh_model is not None else None,
+            )
 
             if show_world_camera_frustum:
                 _log_small_camera_frustum(
@@ -718,6 +729,14 @@ def build_argparser() -> argparse.ArgumentParser:
         help="Default WORLD body: mesh / skeleton / both (toggle with Blueprint eyes)",
     )
     parser.add_argument(
+        "--projection-repr", choices=("skeleton", "mesh", "both"), default="skeleton",
+        help="Fourth panel body overlay; change layers with Blueprint eye icons",
+    )
+    parser.add_argument(
+        "--projection-opacity", type=float, default=0.4,
+        help="Mesh overlay opacity in [0, 1] (default: 0.4)",
+    )
+    parser.add_argument(
         "--smplh-model",
         type=str,
         default=None,
@@ -762,6 +781,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         depth_rgb_downsample=args.depth_rgb_downsample,
         show_slam_point_cloud=args.show_slam_point_cloud,
         body_repr=args.body_repr,
+        projection_repr=args.projection_repr,
+        projection_opacity=args.projection_opacity,
         smplh_model_path=args.smplh_model,
         smplh_gender=args.smplh_gender,
         show_world_camera_frustum=args.show_world_frustum,

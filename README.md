@@ -11,6 +11,7 @@ Tools for **reading** and **visualizing** [HumanPlus-1000](https://huggingface.c
 |------|-------------|
 | `data_loader.py` | Load `annotation.hdf5` (calibration, SLAM, body/hand motion, depth, point cloud) and stereo video. |
 | `visualize.py` | `visualize` command: fisheye, rectified + hands, depth, WORLD × HUMAN, SLAM trajectory. |
+| `projection.py` | Calibrated skeleton and depth-buffered mesh overlays on the rectified right camera. |
 | `geometry.py` | Helpers: `depth_to_colormap`, `depth_to_pointcloud`, undistort, skeleton. |
 | `blueprint.py` | Rerun layout (`create_humanplus_blueprint`). |
 | `body_model.py` | Numpy SMPL-H LBS from official `model.npz` (optional mesh). |

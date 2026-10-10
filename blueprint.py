@@ -14,9 +14,11 @@ from .constants import (
     PATH_FISHEYE_LEFT,
     PATH_FISHEYE_RIGHT,
     PATH_RECTIFIED_LEFT,
-    PATH_RECTIFIED_RIGHT,
+    PATH_BODY_PROJECTION,
     PATH_SLAM_TRAJ,
     PATH_TASK,
+    PATH_CURRENT_ACTION,
+    PATH_ACTION_TIMELINE,
     PATH_WORLD,
 )
 
@@ -97,6 +99,7 @@ def create_humanplus_blueprint(
     slam_view_extent: float = 8.0,
     show_slam_point_cloud: bool = False,
     body_repr: str = "both",
+    projection_repr: str = "skeleton",
 ) -> rrb.Blueprint:
     """Build the viewer layout.
 
@@ -129,7 +132,15 @@ def create_humanplus_blueprint(
     )
     rectified_row = rrb.Horizontal(
         _image_view("RECTIFIED VIEW LEFT", PATH_RECTIFIED_LEFT, (rw, rh)),
-        _image_view("RECTIFIED VIEW RIGHT", PATH_RECTIFIED_RIGHT, (rw, rh)),
+        rrb.Spatial2DView(
+            name="BODY PROJECTION · RIGHT",
+            origin=PATH_BODY_PROJECTION,
+            visual_bounds=_bounds2d(rw, rh),
+            overrides={
+                f"{PATH_BODY_PROJECTION}/skeleton": rrb.EntityBehavior(visible=projection_repr != "mesh"),
+                f"{PATH_BODY_PROJECTION}/mesh": rrb.EntityBehavior(visible=projection_repr != "skeleton"),
+            },
+        ),
     )
     depth_slam_row = rrb.Horizontal(
         _image_view("DEPTH", PATH_DEPTH, (dw, dh)),
@@ -169,8 +180,18 @@ def create_humanplus_blueprint(
             background=[28, 30, 34],
             line_grid=ground,
         ),
-        rrb.TextDocumentView(name="Behavior Annotation", origin=PATH_TASK),
-        row_shares=[5, 2],
+        rrb.Vertical(
+            rrb.TextDocumentView(name="Task Summary", origin=PATH_TASK),
+            rrb.TextDocumentView(name="Current Action", origin=PATH_CURRENT_ACTION),
+            rrb.TimeSeriesView(
+                name="Action Timeline",
+                origin=PATH_ACTION_TIMELINE,
+                axis_y=rrb.ScalarAxis(range=[-1.0, 1.0], zoom_lock=True),
+                plot_legend=rrb.PlotLegend(corner=rrb.Corner2D.LeftTop, visible=True),
+            ),
+            row_shares=[2, 4, 4],
+        ),
+        row_shares=[3, 2],
     )
 
     return rrb.Blueprint(
@@ -179,6 +200,6 @@ def create_humanplus_blueprint(
             right_column,
             column_shares=[left_share, right_share],
         ),
-        rrb.TimePanel(state="expanded"),
+        rrb.TimePanel(state="expanded", timeline="stable_time", play_state="Following"),
         collapse_panels=False,
     )

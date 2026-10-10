@@ -8,3 +8,6 @@ etc/
 *.egg-info/
 dist/
 build/
+
+# Local development tests
+/tests/

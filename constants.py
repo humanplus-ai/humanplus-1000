@@ -32,3 +32,8 @@ PATH_BODY_SKELETON = f"{PATH_WORLD}/body_skeleton"
 PATH_BODY_MESH = f"{PATH_WORLD}/body_mesh"
 PATH_SLAM_TRAJ = "slam_traj"
 PATH_TASK = "behavior_annotation/description"
+
+PATH_CURRENT_ACTION = "behavior_annotation/current_action"
+PATH_ACTION_TIMELINE = "behavior_annotation/action_timeline"
+
+PATH_BODY_PROJECTION = "body_projection"
