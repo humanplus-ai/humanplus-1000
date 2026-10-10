@@ -6,7 +6,7 @@ import re
 import numpy as np
 import rerun as rr
 
-from .constants import PATH_ACTION_TIMELINE, PATH_CURRENT_ACTION
+from .constants import PATH_ACTION_LEGEND, PATH_ACTION_TIMELINE, PATH_CURRENT_ACTION
 from .data_loader import AtomicAction, ReleaseEpisode
 
 # Bright, distinct colors on both light and dark Rerun themes.
@@ -69,6 +69,16 @@ def format_current_action(actions: tuple[AtomicAction, ...], seconds: float) -> 
     return "\n\n".join(chunks)
 
 
+def format_action_legend(actions: tuple[AtomicAction, ...], seconds: float) -> str:
+    """Only the labels at the playback cursor; use the same [start, end) rule."""
+    if not actions:
+        return "No action annotations"
+    active = active_actions(actions, seconds)
+    if not active:
+        return "No action at this time"
+    return "\n\n".join(f"**{i + 1:02d} · {_text(actions[i].label)}**" for i in active)
+
+
 def timeline_segments(actions: tuple[AtomicAction, ...], duration: float):
     """Independent line intervals avoid connecting repeated actions across gaps.
 
@@ -115,6 +125,7 @@ class BehaviorDisplay:
 
     def log_document(self, seconds: float):
         rr.log(PATH_CURRENT_ACTION, rr.TextDocument(format_current_action(self.actions, seconds), media_type=rr.MediaType.MARKDOWN))
+        rr.log(PATH_ACTION_LEGEND, rr.TextDocument(format_action_legend(self.actions, seconds), media_type=rr.MediaType.MARKDOWN))
 
     def _log_at(self, seconds: float):
         rr.set_time('stable_time', duration=seconds)

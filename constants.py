@@ -35,5 +35,6 @@ PATH_TASK = "behavior_annotation/description"
 
 PATH_CURRENT_ACTION = "behavior_annotation/current_action"
 PATH_ACTION_TIMELINE = "behavior_annotation/action_timeline"
+PATH_ACTION_LEGEND = "behavior_annotation/action_legend"
 
 PATH_BODY_PROJECTION = "body_projection"

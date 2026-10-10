@@ -19,6 +19,7 @@ from .constants import (
     PATH_TASK,
     PATH_CURRENT_ACTION,
     PATH_ACTION_TIMELINE,
+    PATH_ACTION_LEGEND,
     PATH_WORLD,
 )
 
@@ -183,11 +184,17 @@ def create_humanplus_blueprint(
         rrb.Vertical(
             rrb.TextDocumentView(name="Task Summary", origin=PATH_TASK),
             rrb.TextDocumentView(name="Current Action", origin=PATH_CURRENT_ACTION),
-            rrb.TimeSeriesView(
-                name="Action Timeline",
-                origin=PATH_ACTION_TIMELINE,
-                axis_y=rrb.ScalarAxis(range=[-1.0, 1.0], zoom_lock=True),
-                plot_legend=rrb.PlotLegend(corner=rrb.Corner2D.LeftTop, visible=True),
+            rrb.Horizontal(
+                # Native plot legends describe the whole displayed range, not
+                # the cursor. A recorded document makes this legend seekable.
+                rrb.TextDocumentView(name="Legend", origin=PATH_ACTION_LEGEND),
+                rrb.TimeSeriesView(
+                    name="Action Timeline",
+                    origin=PATH_ACTION_TIMELINE,
+                    axis_y=rrb.ScalarAxis(range=[-1.0, 1.0], zoom_lock=True),
+                    plot_legend=rrb.PlotLegend(visible=False),
+                ),
+                column_shares=[2, 5],
             ),
             row_shares=[2, 4, 4],
         ),
