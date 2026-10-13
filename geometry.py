@@ -150,23 +150,93 @@ def project_points(
     return uv, valid
 
 
+def vis_disparity(
+    disp: np.ndarray,
+    min_val: Optional[float] = None,
+    max_val: Optional[float] = None,
+    invalid_thres: float = np.inf,
+    color_map: int = cv2.COLORMAP_TURBO,
+) -> np.ndarray:
+    """Fast-FoundationStereo style disparity colouring (Turbo, not reversed).
+
+    Small values are blue, large values are red. ``min_val`` / ``max_val``
+    default to the min / max of the valid pixels. Non-finite pixels and
+    pixels ``>= invalid_thres`` are black.
+
+    @param disp - ``[H, W]`` disparity-like map.
+    @param min_val - Low end of the colour scale; defaults to the valid minimum.
+    @param max_val - High end of the colour scale; defaults to the valid maximum.
+    @param invalid_thres - Values at or above this are invalid.
+    @param color_map - OpenCV colormap, Turbo by default.
+    @returns ``[H, W, 3]`` uint8 RGB.
+    @throws ValueError - ``disp`` is not 2D.
+    """
+    src = np.asarray(disp, dtype=np.float32)
+    if src.ndim != 2:
+        raise ValueError(f"vis_disparity expects [H, W], got {src.shape}")
+    height, width = src.shape
+    invalid_mask = (~np.isfinite(src)) | (src >= float(invalid_thres))
+    if not np.any(~invalid_mask):
+        return np.zeros((height, width, 3), dtype=np.uint8)
+    valid = src[~invalid_mask]
+    lo = float(valid.min()) if min_val is None else float(min_val)
+    hi = float(valid.max()) if max_val is None else float(max_val)
+    span = hi - lo
+    safe = np.where(np.isfinite(src), src, lo)
+    if span < 1e-8:
+        norm = np.zeros(src.shape, dtype=np.float32)
+    else:
+        norm = np.clip((safe - lo) / span, 0.0, 1.0)
+    color_bgr = cv2.applyColorMap((norm * 255.0).astype(np.uint8), color_map)
+    color_rgb = np.ascontiguousarray(color_bgr[..., ::-1])
+    color_rgb[invalid_mask] = 0
+    return color_rgb
+
+
 def depth_to_colormap(
     depth: np.ndarray,
     depth_min: float,
     depth_max: float,
     invalid_value: float = 0.0,
+    clip_min: Optional[float] = None,
+    clip_max: Optional[float] = None,
 ) -> np.ndarray:
-    """Convert depth to Jet RGB (near = red, far = blue)."""
-    d = depth.astype(np.float32)
-    valid = np.isfinite(d) & (d > 0) & (d != invalid_value)
-    out = np.zeros((*d.shape, 3), dtype=np.uint8)
+    """Colour metric Z depth linearly (no ``1/Z`` disparity mapping).
+
+    ``depth_min`` / ``depth_max`` (or ``clip_*``) only drop invalid pixels.
+    The Turbo scale is stretched over the min / max valid depth of the
+    *current frame* and reversed, so the nearest pixels are red and the
+    farthest are blue.
+
+    @param depth - ``[H, W]`` depth in metres.
+    @param depth_min - Pixels below this are invalid; ``clip_min`` wins.
+    @param depth_max - Pixels above this are invalid; ``clip_max`` wins.
+    @param invalid_value - Extra invalid sentinel, default 0.
+    @param clip_min - Pixels below this are invalid.
+    @param clip_max - Pixels above this are invalid.
+    @returns ``[H, W, 3]`` uint8 RGB.
+    @throws ValueError - ``depth`` is not 2D.
+    """
+    d = np.asarray(depth, dtype=np.float32)
+    if d.ndim != 2:
+        raise ValueError(f"depth_to_colormap expects [H, W], got {d.shape}")
+    clip_lo = float(clip_min if clip_min is not None else depth_min)
+    clip_hi = float(clip_max if clip_max is not None else depth_max)
+    valid = np.isfinite(d) & (d > 0) & (d != float(invalid_value))
+    if np.isfinite(clip_lo):
+        valid &= d >= clip_lo
+    if np.isfinite(clip_hi):
+        valid &= d <= clip_hi
     if not np.any(valid):
-        return out
-    norm = np.clip((d - depth_min) / (depth_max - depth_min + 1e-8), 0.0, 1.0)
-    color_bgr = cv2.applyColorMap(((1.0 - norm) * 255.0).astype(np.uint8), cv2.COLORMAP_JET)
-    color_rgb = cv2.cvtColor(color_bgr, cv2.COLOR_BGR2RGB)
-    out[valid] = color_rgb[valid]
-    return out
+        return np.zeros((*d.shape, 3), dtype=np.uint8)
+    vals = d[valid]
+    vis_lo = float(vals.min())
+    vis_hi = float(vals.max())
+    if vis_hi - vis_lo < 1e-8:
+        vis_hi = vis_lo + 1e-3
+    z_vis = np.full(d.shape, np.inf, dtype=np.float32)
+    z_vis[valid] = vis_lo + vis_hi - d[valid]
+    return vis_disparity(z_vis, min_val=vis_lo, max_val=vis_hi)
 
 
 def depth_to_pointcloud(

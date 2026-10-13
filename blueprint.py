@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from typing import Optional, Tuple
 
 import rerun as rr
@@ -22,6 +23,31 @@ from .constants import (
     PATH_ACTION_LEGEND,
     PATH_WORLD,
 )
+
+
+def _time_panel() -> rrb.TimePanel:
+    """Expanded time panel on ``stable_time``.
+
+    Rerun 0.26 accepts ``state`` and ``timeline`` only. Newer builds also
+    take ``play_state="Following"``.
+
+    @returns TimePanel for the installed Rerun version.
+    """
+    kwargs = {
+        "state": "expanded",
+        "timeline": "stable_time",
+        "play_state": "Following",
+    }
+    try:
+        params = set(inspect.signature(rrb.TimePanel.__init__).parameters)
+    except (TypeError, ValueError):
+        params = set()
+    if params:
+        kwargs = {key: value for key, value in kwargs.items() if key in params}
+    try:
+        return rrb.TimePanel(**kwargs)
+    except TypeError:
+        return rrb.TimePanel(state="expanded")
 
 
 def _bounds2d(width: int, height: int) -> rrb.VisualBounds2D:
@@ -100,7 +126,7 @@ def create_humanplus_blueprint(
     slam_view_extent: float = 8.0,
     show_slam_point_cloud: bool = False,
     body_repr: str = "both",
-    projection_repr: str = "skeleton",
+    projection_repr: str = "both",
 ) -> rrb.Blueprint:
     """Build the viewer layout.
 
@@ -207,6 +233,6 @@ def create_humanplus_blueprint(
             right_column,
             column_shares=[left_share, right_share],
         ),
-        rrb.TimePanel(state="expanded", timeline="stable_time", play_state="Following"),
+        _time_panel(),
         collapse_panels=False,
     )

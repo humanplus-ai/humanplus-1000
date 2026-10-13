@@ -28,6 +28,28 @@ def _optional_dataset(group: h5py.Group, path: str) -> Optional[np.ndarray]:
     return np.asarray(group[path][...])
 
 
+def read_depth_meters(dataset: h5py.Dataset, selection: Any = Ellipsis) -> np.ndarray:
+    """Read a depth dataset as float32 metres.
+
+    Legacy releases store metres; newer ones store ``uint16`` millimetres with
+    ``unit="mm"`` and ``scale_to_m=0.001``.
+
+    @param dataset - HDF5 depth dataset.
+    @param selection - Optional slice into the dataset.
+    @returns Depth in metres, ``0`` where invalid.
+    @throws ValueError - Unsupported unit or non-positive scale.
+    """
+    unit = str(_decode(dataset.attrs.get("unit", "m"))).strip().lower()
+    if unit not in {"m", "mm"}:
+        raise ValueError(f"Unsupported depth unit: {unit!r}")
+    scale = float(dataset.attrs.get("scale_to_m", 0.001 if unit == "mm" else 1.0))
+    if not np.isfinite(scale) or scale <= 0:
+        raise ValueError(f"Invalid depth scale_to_m: {scale}")
+    depth = np.asarray(dataset[selection], dtype=np.float32)
+    depth *= scale
+    return depth
+
+
 @dataclass
 class ReleaseCalibration:
     """Camera calibration and world-frame transforms for one session."""
@@ -560,7 +582,8 @@ def load_release_episode(
                 depth_utc_ns = sync_utc_ns
             depth_K = np.asarray(depth_g["intrinsics"][...], dtype=np.float64)
             if load_depth and "depth" in depth_g:
-                depth = np.asarray(depth_g["depth"][...], dtype=np.float32)
+                # uint16 mm releases carry scale_to_m; convert to float32 metres.
+                depth = read_depth_meters(depth_g["depth"])
 
         if "foot_contact" in body:
             body_foot_contact = np.asarray(body["foot_contact"][...])

@@ -356,8 +356,8 @@ def visualize_release(
     image_scale: float = 0.5,
     task_json: Optional[str | Path] = None,
     point_cloud_max_points: int = 80000,
-    depth_rgb_points: int = 20000,
-    depth_rgb_downsample: int = 4,
+    depth_rgb_points: int = 50000,
+    depth_rgb_downsample: int = 2,
     show_slam_point_cloud: bool = False,
     body_repr: str = "both",
     smplh_model_path: Optional[str | Path] = None,
@@ -366,8 +366,8 @@ def visualize_release(
     body_y_offset: float = 0.0,
     ground_mode: str = "first_frame",
     app_id: str = "HumanPlus-1000",
-    projection_repr: str = "skeleton",
-    projection_opacity: float = 0.4,
+    projection_repr: str = "both",
+    projection_opacity: float = 0.75,
 ) -> Optional[Path]:
     """Visualize one HumanPlus-1000 session in Rerun.
 
@@ -614,7 +614,7 @@ def visualize_release(
                         rr.Points3D(
                             transform_points(T_mocap_cam, pts_cam),
                             colors=pts_rgb,
-                            radii=0.006,
+                            radii=0.014,
                         ),
                     )
 
@@ -642,10 +642,12 @@ def visualize_release(
                     ),
                 )
 
+            # skeleton 模式不需要网格叠加，跳过光栅。
+            draw_projection_mesh = smplh_model is not None and projection_repr != "skeleton"
             projection.log_frame(
                 projection_rgb, body, T_mocap_cam,
-                vertices_world=verts,
-                faces=smplh_model.faces if smplh_model is not None else None,
+                vertices_world=verts if draw_projection_mesh else None,
+                faces=smplh_model.faces if draw_projection_mesh else None,
             )
 
             if show_world_camera_frustum:
@@ -713,10 +715,15 @@ def build_argparser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--depth-rgb-points",
         type=int,
-        default=20000,
-        help="Max RGB depth points per frame; 0 disables",
+        default=50000,
+        help="Max RGB depth points per frame; 0 disables (default denser, aligned with debug viewer)",
     )
-    parser.add_argument("--depth-rgb-downsample", type=int, default=4)
+    parser.add_argument(
+        "--depth-rgb-downsample",
+        type=int,
+        default=2,
+        help="Depth pixel stride; smaller = denser point cloud (default 2)",
+    )
     parser.add_argument(
         "--show-slam-point-cloud",
         action="store_true",
@@ -729,12 +736,12 @@ def build_argparser() -> argparse.ArgumentParser:
         help="Default WORLD body: mesh / skeleton / both (toggle with Blueprint eyes)",
     )
     parser.add_argument(
-        "--projection-repr", choices=("skeleton", "mesh", "both"), default="skeleton",
+        "--projection-repr", choices=("skeleton", "mesh", "both"), default="both",
         help="Fourth panel body overlay; change layers with Blueprint eye icons",
     )
     parser.add_argument(
-        "--projection-opacity", type=float, default=0.4,
-        help="Mesh overlay opacity in [0, 1] (default: 0.4)",
+        "--projection-opacity", type=float, default=0.75,
+        help="Mesh overlay opacity in [0, 1] (default: 0.75)",
     )
     parser.add_argument(
         "--smplh-model",

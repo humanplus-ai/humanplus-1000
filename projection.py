@@ -5,6 +5,7 @@ All layers stay separate in Rerun so visibility can be changed during replay.
 """
 from __future__ import annotations
 
+import cv2
 import numpy as np
 import rerun as rr
 
@@ -138,45 +139,66 @@ def _raster_triangle(triangle, K, rgba, depth, color):
 
 def render_mesh_rgba(vertices_camera: np.ndarray, faces: np.ndarray, K: np.ndarray, size_wh,
                      near=.05, base_color=COLOR_BODY_MESH):
-    """Clip triangles, then use perspective-correct Z for self-occlusion.
+    """Rasterize the mesh with back-face culling and a painter's algorithm.
 
-    Background is transparent. This intentionally does not infer occlusion by
-    scene objects from RGB. No external rendering engine or GPU is required.
+    Vertices are projected once, triangles are filled far-to-near with
+    ``cv2.fillConvexPoly``. Self-occlusion follows per-face mean depth.
+    Triangles that cross the near plane are skipped. Background is transparent.
+    This intentionally does not infer occlusion by scene objects from RGB.
     """
     width, height = size_wh
     rgba = np.zeros((height, width, 4), dtype=np.uint8)
-    depth = np.full((height, width), np.inf, dtype=np.float64)
-    planes = frustum_planes(K, width, height, near)
-    triangles = np.asarray(vertices_camera, dtype=np.float64)[np.asarray(faces, dtype=np.int64)]
-    valid = np.isfinite(triangles).all(axis=(1, 2))
-    fully_inside = valid.copy()
-    for normal, offset in planes:
-        distances = triangles @ normal + offset
-        valid &= np.any(distances >= 0, axis=1)
-        fully_inside &= np.all(distances >= 0, axis=1)
+    vertices = np.asarray(vertices_camera, dtype=np.float64)
+    tri_ids = np.asarray(faces, dtype=np.int64)
+    triangles = vertices[tri_ids]
+
+    # 整个三角形都在近平面前方才画；跨近平面的少数三角形直接丢掉。
+    valid = np.isfinite(triangles).all(axis=(1, 2)) & (triangles[:, :, 2] > near).all(axis=1)
+    normals = np.cross(triangles[:, 1] - triangles[:, 0], triangles[:, 2] - triangles[:, 0])
+    norms = np.linalg.norm(normals, axis=1)
+    valid &= norms > 1e-12
+    # 背面剔除：相机在原点，法线与"相机到面心"同向即背向相机。
+    centroids = triangles.mean(axis=1)
+    valid &= np.einsum('ij,ij->i', normals, centroids) < 0
+    ids = np.flatnonzero(valid)
+    if ids.size == 0:
+        return rgba
+
+    # 顶点只投影一次，再按三角形取用。
+    pixels = _pixels(vertices, K)
+    uv = pixels[tri_ids[ids]]
+    # 屏幕外的三角形不必交给 OpenCV。
+    inside = (
+        (uv[:, :, 0].max(axis=1) >= 0) & (uv[:, :, 0].min(axis=1) <= width - 1)
+        & (uv[:, :, 1].max(axis=1) >= 0) & (uv[:, :, 1].min(axis=1) <= height - 1)
+    )
+    ids, uv = ids[inside], uv[inside]
+    if ids.size == 0:
+        return rgba
+
     light = np.array([-.3, -.5, -1.])
     light /= np.linalg.norm(light)
-    for face_i in np.flatnonzero(valid):
-        triangle = triangles[face_i]
-        normal = np.cross(triangle[1] - triangle[0], triangle[2] - triangle[0])
-        norm = np.linalg.norm(normal)
-        if norm < 1e-12:
-            continue
-        shade = .45 + .55 * abs(float(normal @ light / norm))
-        color = np.clip(np.asarray(base_color) * shade, 0, 255).astype(np.uint8)
-        polygon = list(triangle)
-        if not fully_inside[face_i]:
-            for n, d in planes:
-                polygon = _clip_polygon(polygon, n, d)
-                if len(polygon) < 3:
-                    break
-        for i in range(1, len(polygon) - 1):
-            _raster_triangle(np.array([polygon[0], polygon[i], polygon[i + 1]]), K, rgba, depth, color)
+    shade = .45 + .55 * np.abs(normals[ids] @ light / norms[ids])
+    colors = np.clip(np.asarray(base_color, dtype=np.float64)[None, :] * shade[:, None], 0, 255)
+    colors = colors.astype(np.uint8)
+
+    # 画家算法：由远到近覆盖，遮挡按面平均深度排序。
+    order = np.argsort(-centroids[ids, 2], kind='stable')
+    polygons = np.round(uv[order]).astype(np.int32)
+    colors = colors[order]
+    # 先写进 BGR/RGB 三通道图，最后用覆盖掩码补 alpha。
+    canvas = np.zeros((height, width, 3), dtype=np.uint8)
+    for polygon, color in zip(polygons, colors):
+        cv2.fillConvexPoly(canvas, polygon, (int(color[0]), int(color[1]), int(color[2])))
+    covered = np.zeros((height, width), dtype=np.uint8)
+    cv2.fillPoly(covered, list(polygons), 255)
+    rgba[:, :, :3] = canvas
+    rgba[:, :, 3] = covered
     return rgba
 
 
 class BodyProjection:
-    def __init__(self, calib, camera_frame: str, opacity=.4):
+    def __init__(self, calib, camera_frame: str, opacity=.75):
         if not 0 <= opacity <= 1:
             raise ValueError('Projection opacity must be between 0 and 1')
         self.calib, self.camera_frame, self.opacity = calib, camera_frame, opacity
