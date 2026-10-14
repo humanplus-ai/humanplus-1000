@@ -98,12 +98,17 @@ def _resolve_hand_joints_camera(
     wrist_position_camera: Optional[np.ndarray],
     valid: bool = True,
 ) -> Optional[np.ndarray]:
-    """HaMeR-camera MANO-21 joints: ``joints_cam = joints_local + wrist``.
+    """HaMeR 相机系 MANO-21：``joints_cam = joints_local + wrist``。
 
-    ``valid`` is unused for visibility; any finite local joints + wrist are drawn
-    so sparse HaMeR flags do not flicker the overlay.
+    缺检测时不画，也不沿用上一帧。
+
+    @param joints_3d - MANO 局部 21 点。
+    @param wrist_position_camera - 相机系手腕平移。
+    @param valid - 当前帧该侧是否有检测。
+    @returns 相机系关节；``valid`` 为假或手腕/关节不可用时为 ``None``。
     """
-    del valid
+    if not valid:
+        return None
     if joints_3d is None or wrist_position_camera is None:
         return None
     joints_local = np.asarray(joints_3d, dtype=np.float64)
@@ -117,26 +122,6 @@ def _resolve_hand_joints_camera(
     out[finite] = (joints_local[finite] + wrist).astype(np.float32)
     out[~finite] = np.nan
     return out
-
-
-def _hold_hand_joints(
-    current: Optional[np.ndarray],
-    state: dict,
-    motion_i: int,
-    max_hold_frames: int = 12,
-) -> Optional[np.ndarray]:
-    """Hold the last HaMeR observation across sparse gaps (typically 1-in-3)."""
-    if current is not None:
-        state["joints"] = current
-        state["motion_i"] = int(motion_i)
-        return current
-    prev = state.get("joints")
-    prev_i = state.get("motion_i")
-    if prev is not None and prev_i is not None:
-        if int(motion_i) - int(prev_i) <= int(max_hold_frames):
-            return prev
-    state.clear()
-    return None
 
 
 def _rotation_to_T(rotation: np.ndarray) -> np.ndarray:
@@ -509,9 +494,6 @@ def visualize_release(
         n = min(n, max_frames)
     indices = list(range(0, n, max(1, stride)))
     last_depth_rgb = None
-    hand_hold_left: dict = {}
-    hand_hold_right: dict = {}
-    hand_hold_frames = max(12, 4 * max(1, stride))
 
     with StereoVideoReader(episode.video_left_path, episode.video_right_path) as videos:
         for motion_i in tqdm(indices, desc="HumanPlus Viewer"):
@@ -550,29 +532,19 @@ def visualize_release(
                 if episode.hand_right_wrist_position_camera is not None
                 else None
             )
-            left_hand_cam = _hold_hand_joints(
-                _resolve_hand_joints_camera(
-                    episode.hand_left_joints_3d[motion_i]
-                    if episode.hand_left_joints_3d is not None
-                    else None,
-                    left_wrist_cam,
-                    bool(episode.hand_left_valid[motion_i]),
-                ),
-                hand_hold_left,
-                motion_i,
-                max_hold_frames=hand_hold_frames,
+            left_hand_cam = _resolve_hand_joints_camera(
+                episode.hand_left_joints_3d[motion_i]
+                if episode.hand_left_joints_3d is not None
+                else None,
+                left_wrist_cam,
+                bool(episode.hand_left_valid[motion_i]),
             )
-            right_hand_cam = _hold_hand_joints(
-                _resolve_hand_joints_camera(
-                    episode.hand_right_joints_3d[motion_i]
-                    if episode.hand_right_joints_3d is not None
-                    else None,
-                    right_wrist_cam,
-                    bool(episode.hand_right_valid[motion_i]),
-                ),
-                hand_hold_right,
-                motion_i,
-                max_hold_frames=hand_hold_frames,
+            right_hand_cam = _resolve_hand_joints_camera(
+                episode.hand_right_joints_3d[motion_i]
+                if episode.hand_right_joints_3d is not None
+                else None,
+                right_wrist_cam,
+                bool(episode.hand_right_valid[motion_i]),
             )
 
             rect_l_vis = _overlay_hands_on_rectified(
